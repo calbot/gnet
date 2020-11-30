@@ -59,7 +59,10 @@ func newTCPConn(fd int, el *eventloop, sa unix.Sockaddr, remoteAddr net.Addr) (c
 		inboundBuffer:  prb.Get(),
 		outboundBuffer: prb.Get(),
 	}
-	c.localAddr = el.ln.lnaddr
+	if el.ln != nil {
+		//Sever side connections have a listener address...
+		c.localAddr = el.ln.lnaddr
+	}
 	c.remoteAddr = remoteAddr
 	if el.svr.opts.TCPKeepAlive > 0 {
 		if proto := el.ln.network; proto == "tcp" || proto == "unix" {

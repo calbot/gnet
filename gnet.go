@@ -92,6 +92,11 @@ func (s Server) DupFd() (dupFD int, err error) {
 	return
 }
 
+//AttachClient - Attach a TCP client file descriptor so it can be handled by the poller event loops
+func (s Server) AttachClient(tcp *net.TCPConn) {
+	s.svr.registerConnection(tcp)
+}
+
 // Conn is a interface of gnet connection.
 type Conn interface {
 	// Context returns a user-defined context.
@@ -268,6 +273,35 @@ func Serve(eventHandler EventHandler, protoAddr string, opts ...Option) (err err
 	defer ln.close()
 
 	return serve(eventHandler, ln, options, protoAddr)
+}
+
+//StartClientLoops - starts event pollers for client side connections
+func StartClientLoops(eventHandler EventHandler, opts ...Option) (err error) {
+	options := loadOptions(opts...)
+
+	if options.Logger != nil {
+		logging.DefaultLogger = options.Logger
+	}
+	defer logging.Cleanup()
+
+	// The maximum number of operating system threads that the Go program can use is initially set to 10000,
+	// which should be the maximum amount of I/O event-loops locked to OS threads users can start up.
+	if options.LockOSThread && options.NumEventLoop > 10000 {
+		logging.DefaultLogger.Errorf("too many event-loops under LockOSThread mode, should be less than 10,000 "+
+			"while you are trying to set up %d\n", options.NumEventLoop)
+		return errors.ErrTooManyEventLoopThreads
+	}
+
+	// network, addr := parseProtoAddr(protoAddr)
+
+	// var ln *listener
+	// if ln, err = initListenerWithFileDescriptor(fileDescriptor, network, addr, options.ReusePort); err != nil {
+	// 	return
+	// }
+	// defer ln.close()
+
+	// return serve(eventHandler, ln, options, protoAddr)
+	return clientloops(eventHandler, options)
 }
 
 // shutdownPollInterval is how often we poll to check whether server has been shut down during gnet.Stop().

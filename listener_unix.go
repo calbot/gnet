@@ -83,3 +83,9 @@ func initListener(network, addr string, reusePort bool) (l *listener, err error)
 	err = l.normalize()
 	return
 }
+
+func initListenerWithFileDescriptor(fd int, network, addr string, reusePort bool) (l *listener, err error) {
+	l = &listener{network: network, addr: addr, fd: fd, reusePort: reusePort}
+	// err = l.normalize()
+	return
+}

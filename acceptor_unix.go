@@ -23,6 +23,7 @@
 package gnet
 
 import (
+	"net"
 	"os"
 
 	"github.com/panjf2000/gnet/errors"
@@ -45,6 +46,50 @@ func (svr *server) acceptNewConnection(fd int) error {
 	netAddr := netpoll.SockaddrToTCPOrUnixAddr(sa)
 	el := svr.lb.next(netAddr)
 	c := newTCPConn(nfd, el, sa, netAddr)
+
+	_ = el.poller.Trigger(func() (err error) {
+		if err = el.poller.AddRead(nfd); err != nil {
+			return
+		}
+		el.connections[nfd] = c
+		err = el.loopOpen(c)
+		return
+	})
+	return nil
+}
+
+//Register's an existing TCPConnection
+func (svr *server) registerConnection(tcp *net.TCPConn) error {
+	// nfd, sa, err := unix.Accept(fd)
+	// if err != nil {
+	// 	if err == unix.EAGAIN {
+	// 		return nil
+	// 	}
+	// 	return errors.ErrAcceptSocket
+	// }
+	// if err = os.NewSyscallError("fcntl nonblock", unix.SetNonblock(nfd, true)); err != nil {
+	// 	return err
+	// }
+
+	// netAddr := netpoll.SockaddrToTCPOrUnixAddr(sa)
+	el := svr.lb.next(tcp.RemoteAddr())
+
+	f, err := tcp.File()
+	if err != nil {
+		return err
+	}
+	nfd := int(f.Fd())
+
+	sock, err := unix.Getsockname(nfd)
+	// sock, ok := tcp.LocalAddr().(unix.Sockaddr)
+	if err != nil {
+		return err
+	}
+
+	c := newTCPConn(nfd, el, sock, tcp.RemoteAddr())
+
+	//Notify connected!
+	// el.eventHandler.OnOpened(c)
 
 	_ = el.poller.Trigger(func() (err error) {
 		if err = el.poller.AddRead(nfd); err != nil {

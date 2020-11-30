@@ -133,6 +133,50 @@ func (svr *server) activateEventLoops(numEventLoop int) (err error) {
 	return
 }
 
+func (svr *server) clientactivateReactors(numEventLoop int) error {
+	for i := 0; i < numEventLoop; i++ {
+		if p, err := netpoll.OpenPoller(); err == nil {
+			el := new(eventloop)
+			el.ln = svr.ln
+			el.svr = svr
+			el.poller = p
+			el.packet = make([]byte, 0x10000)
+			el.connections = make(map[int]*conn)
+			el.eventHandler = svr.eventHandler
+			el.calibrateCallback = svr.lb.calibrate
+			svr.lb.register(el)
+		} else {
+			return err
+		}
+	}
+
+	// Start sub reactors in background.
+	//Uses the srv.lb (load balancers) setup above to listen for events
+	svr.startSubReactors()
+
+	//DON'T NEED SERVER CODE...
+	// if p, err := netpoll.OpenPoller(); err == nil {
+	// 	el := new(eventloop)
+	// 	el.ln = svr.ln
+	// 	el.idx = -1
+	// 	el.poller = p
+	// 	el.svr = svr
+	// 	_ = el.poller.AddRead(el.ln.fd)
+	// 	svr.mainLoop = el
+
+	// 	// Start main reactor in background.
+	// 	svr.wg.Add(1)
+	// 	go func() {
+	// 		svr.activateMainReactor(svr.opts.LockOSThread)
+	// 		svr.wg.Done()
+	// 	}()
+	// } else {
+	// 	return err
+	// }
+
+	return nil
+}
+
 func (svr *server) activateReactors(numEventLoop int) error {
 	for i := 0; i < numEventLoop; i++ {
 		if p, err := netpoll.OpenPoller(); err == nil {
@@ -173,6 +217,14 @@ func (svr *server) activateReactors(numEventLoop int) error {
 	}
 
 	return nil
+}
+
+func (svr *server) startclient(numEventLoop int) error {
+	if svr.opts.ReusePort || (svr.ln != nil && svr.ln.network == "udp") {
+		return svr.activateEventLoops(numEventLoop)
+	}
+
+	return svr.clientactivateReactors(numEventLoop)
 }
 
 func (svr *server) start(numEventLoop int) error {
@@ -272,6 +324,69 @@ func serve(eventHandler EventHandler, listener *listener, options *Options, prot
 	defer svr.stop(server)
 
 	serverFarm.Store(protoAddr, svr)
+
+	return nil
+}
+
+//Blocks while monitoring events
+func clientloops(eventHandler EventHandler, options *Options) error {
+	// Figure out the correct number of loops/goroutines to use.
+	numEventLoop := 1
+	if options.Multicore {
+		numEventLoop = runtime.NumCPU()
+	}
+	if options.NumEventLoop > 0 {
+		numEventLoop = options.NumEventLoop
+	}
+
+	svr := new(server)
+	svr.opts = options
+	svr.eventHandler = eventHandler
+	// svr.ln = listener
+
+	switch options.LB {
+	case RoundRobin:
+		svr.lb = new(roundRobinLoadBalancer)
+	case LeastConnections:
+		svr.lb = new(leastConnectionsLoadBalancer)
+	case SourceAddrHash:
+		svr.lb = new(sourceAddrHashLoadBalancer)
+	}
+
+	svr.cond = sync.NewCond(&sync.Mutex{})
+	svr.ticktock = make(chan time.Duration, channelBuffer(1))
+	svr.logger = logging.DefaultLogger
+	svr.codec = func() ICodec {
+		if options.Codec == nil {
+			return new(BuiltInFrameCodec)
+		}
+		return options.Codec
+	}()
+
+	server := Server{
+		svr:       svr,
+		Multicore: options.Multicore,
+		// Addr:         listener.lnaddr,
+		NumEventLoop: numEventLoop,
+		ReusePort:    options.ReusePort,
+		TCPKeepAlive: options.TCPKeepAlive,
+	}
+
+	if err := svr.startclient(numEventLoop); err != nil {
+		svr.closeEventLoops()
+		svr.logger.Errorf("gnet server is stopping with error: %v", err)
+		return err
+	}
+
+	switch svr.eventHandler.OnInitComplete(server) {
+	case None:
+	case Shutdown:
+		return nil
+	}
+
+	defer svr.stop(server)
+
+	// serverFarm.Store(protoAddr, svr)
 
 	return nil
 }
