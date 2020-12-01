@@ -92,9 +92,9 @@ func (s Server) DupFd() (dupFD int, err error) {
 	return
 }
 
-//AttachClient - Attach a TCP client file descriptor so it can be handled by the poller event loops
-func (s Server) AttachClient(tcp *net.TCPConn) {
-	s.svr.registerConnection(tcp)
+//ConnectClient -
+func (s Server) ConnectClient(srvaddr string) {
+	s.svr.connectionWithString(srvaddr)
 }
 
 // Conn is a interface of gnet connection.

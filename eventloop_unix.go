@@ -104,7 +104,7 @@ func (el *eventloop) loopAccept(fd int) error {
 		}
 
 		netAddr := netpoll.SockaddrToTCPOrUnixAddr(sa)
-		c := newTCPConn(nfd, el, sa, netAddr)
+		c := newTCPConn(nfd, el, sa, netAddr, el.ln.lnaddr)
 		if err = el.poller.AddRead(c.fd); err == nil {
 			el.connections[c.fd] = c
 			return el.loopOpen(c)

@@ -50,7 +50,7 @@ type conn struct {
 	outboundBuffer *ringbuffer.RingBuffer // buffer for data that is ready to write to client
 }
 
-func newTCPConn(fd int, el *eventloop, sa unix.Sockaddr, remoteAddr net.Addr) (c *conn) {
+func newTCPConn(fd int, el *eventloop, sa unix.Sockaddr, remoteAddr net.Addr, localAddr net.Addr) (c *conn) {
 	c = &conn{
 		fd:             fd,
 		sa:             sa,
@@ -59,10 +59,7 @@ func newTCPConn(fd int, el *eventloop, sa unix.Sockaddr, remoteAddr net.Addr) (c
 		inboundBuffer:  prb.Get(),
 		outboundBuffer: prb.Get(),
 	}
-	if el.ln != nil {
-		//Sever side connections have a listener address...
-		c.localAddr = el.ln.lnaddr
-	}
+	c.localAddr = localAddr
 	c.remoteAddr = remoteAddr
 	if el.svr.opts.TCPKeepAlive > 0 {
 		if proto := el.ln.network; proto == "tcp" || proto == "unix" {

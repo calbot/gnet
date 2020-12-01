@@ -148,3 +148,53 @@ func tcpReusablePort(proto, addr string, reusePort bool) (fd int, netAddr net.Ad
 
 	return
 }
+
+// tcpReusablePort creates an endpoint for communication and returns a file descriptor that refers to that endpoint.
+// Argument `reusePort` indicates whether the SO_REUSEPORT flag will be assigned.
+func tcpConnectReusablePort(proto, srvAddr string, reusePort bool) (fd int, srvsockaddr unix.Sockaddr, netAddr net.Addr, err error) {
+	var (
+		family int
+		// srvsockaddr unix.Sockaddr
+	)
+
+	if srvsockaddr, family, netAddr, err = getTCPSockaddr(proto, srvAddr); err != nil {
+		return
+	}
+
+	if fd, err = sysSocket(family, unix.SOCK_STREAM, unix.IPPROTO_TCP); err != nil {
+		err = os.NewSyscallError("socket", err)
+		return
+	}
+	defer func() {
+		if err != nil {
+			_ = unix.Close(fd)
+		}
+	}()
+
+	if err = os.NewSyscallError("setsockopt", unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_REUSEADDR, 1)); err != nil {
+		return
+	}
+
+	if reusePort {
+		if err = os.NewSyscallError("setsockopt", unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_REUSEPORT, 1)); err != nil {
+			return
+		}
+	}
+
+	// if err = os.NewSyscallError("bind", unix.Bind(fd, sockaddr)); err != nil {
+	// 	return
+	// }
+	connerr := unix.Connect(fd, srvsockaddr)
+	if connerr == unix.EINPROGRESS {
+		//unix.EINPROGRESS is expected since the the socket is non-blocking... see the connect documentation
+		return
+	}
+
+	if err = os.NewSyscallError("connect", connerr); err != nil {
+		return
+	}
+	// Set backlog size to the maximum.
+	// err = os.NewSyscallError("listen", unix.Listen(fd, listenerBacklogMaxSize))
+
+	return
+}
