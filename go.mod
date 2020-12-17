@@ -1,4 +1,4 @@
-module github.com/calbot/gnet
+module github.com/panjf2000/gnet
 
 go 1.15
 
